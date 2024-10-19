@@ -48,15 +48,15 @@
 
 我选取了第一个被试的数据，并分别使用 PCA、LDA 和 t-SNE 进行了降维处理。
 
-![PCA 对单个被试的数据降维结果](assets/subject_1_PCA.png)
+![PCA 对单个被试的数据降维结果](assets/Subject_1_PCA.png)
 
 *图 5：PCA 对单个被试的数据降维结果*
 
-![LDA 对单个被试的数据降维结果](assets/subject_1_LDA.png)
+![LDA 对单个被试的数据降维结果](assets/Subject_1_LDA.png)
 
 *图 6：LDA 对单个被试的数据降维结果*
 
-![t-SNE 对单个被试的数据降维结果](assets/subject_1_TSNE.png)
+![t-SNE 对单个被试的数据降维结果](assets/Subject_1_TSNE.png)
 
 *图 7：t-SNE 对单个被试的数据降维结果*
 
@@ -64,15 +64,15 @@
 
 我将所有被试的数据结合在一起，进行降维操作。结果如下：
 
-![PCA 对所有被试的数据降维结果](assets/all_subjects_PCA.png)
+![PCA 对所有被试的数据降维结果](assets/All_Subjects_PCA.png)
 
 *图 8：PCA 对所有被试的数据降维结果*
 
-![LDA 对所有被试的数据降维结果](assets/all_subjects_LDA.png)
+![LDA 对所有被试的数据降维结果](assets/All_Subjects_LDA.png)
 
 *图 9：LDA 对所有被试的数据降维结果*
 
-![t-SNE 对所有被试的数据降维结果](assets/all_subjects_TSNE.png)
+![t-SNE 对所有被试的数据降维结果](assets/All_Subjects_TSNE.png)
 
 *图 10：t-SNE 对所有被试的数据降维结果*
 
