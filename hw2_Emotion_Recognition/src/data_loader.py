@@ -21,3 +21,20 @@ def load_seed_data_npy(data_path):
                 # Append (data, labels) tuple for each subject
                 subject_data.append((subject_data_array, subject_labels_array))
     return subject_data
+
+
+def reshape_to_spatial(data, channel_matrix, channelID2str):
+    """
+    Reshape function for CNN. Currently it's not in use.
+    """
+    reshaped_data = np.zeros((data.shape[0], 8, 9, 5))  # (samples, height, width, frequency bands)
+    channel_map = {v: k-1 for k, v in channelID2str.items()}  # Map channel names to indices
+    
+    for i in range(8):
+        for j in range(9):
+            channel_name = channel_matrix[i][j]
+            if channel_name != '-':
+                channel_idx = channel_map[channel_name]
+                reshaped_data[:, i, j, :] = data[:, channel_idx, :]
+    
+    return reshaped_data

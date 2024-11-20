@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
 class CNNModel(nn.Module):
     def __init__(self, input_channels, num_classes=3):
@@ -17,21 +16,22 @@ class CNNModel(nn.Module):
         self.relu2 = nn.ReLU()
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(64 * 15 * 1, 64)  # Assuming input size of (62, 5)
+
+        # Calculate the size of the input for fc1 dynamically
+        # After two conv layers and two pool layers, output size is (batch_size, 64, 15, 1)
+        self.fc1 = nn.Linear(64 * 15 * 1, 64)
         self.relu3 = nn.ReLU()
         self.fc2 = nn.Linear(64, num_classes)
-        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = self.conv1(x)
+        x = self.conv1(x)  # Output shape: (batch_size, 32, 62, 5)
         x = self.relu1(x)
-        x = self.pool1(x)
-        x = self.conv2(x)
+        x = self.pool1(x)  # Output shape: (batch_size, 32, 31, 2)
+        x = self.conv2(x)  # Output shape: (batch_size, 64, 31, 2)
         x = self.relu2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
+        x = self.pool2(x)  # Output shape: (batch_size, 64, 15, 1)
+        x = self.flatten(x)  # Output shape: (batch_size, 64 * 15 * 1)
         x = self.fc1(x)
         x = self.relu3(x)
         x = self.fc2(x)
-        x = self.softmax(x)
         return x
