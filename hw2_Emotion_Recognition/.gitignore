@@ -3,3 +3,6 @@
 
 # ignore the pycache files
 **/__pycache__/
+
+# ignore the zip files
+**/*.tar.gz

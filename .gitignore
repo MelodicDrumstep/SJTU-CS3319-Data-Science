@@ -1,0 +1,8 @@
+# ignore the log files
+**/*.log
+
+# ignore the pycache files
+**/__pycache__/
+
+# ignore the zip files
+**/*.tar.gz
