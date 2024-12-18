@@ -8,48 +8,73 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from data_loader import load_seed_data_npy, reshape_to_spatial
-from utils import channelID2str, channel_matrix
+from data_loader import load_seed_data_npy
+import logging
 
 from dann import DANNModel
 
-def train_model(model, train_loader, criterion, optimizer, num_epochs=30, alpha=1.0, use_domain_classifier=True):
+logging.basicConfig(level=logging.DEBUG)
+
+def train_DA(model, train_loader, test_loader, criterion, optimizer, num_epochs=2, alpha=1.0, use_domain_classifier=True, mode="DA"):
     """
     Train the given model
     :param model: PyTorch model to train
     :param train_loader: DataLoader for the training data
+    :param test_loader: DataLoader for the test data (only for DA)
     :param criterion: Loss function
     :param optimizer: Optimizer
     :param num_epochs: Number of training epochs
     :param alpha: Gradient reversal scaling factor
     :param use_domain_classifier: Whether to use the domain classifier (default True)
+    :param mode: Mode of training ('DA' or 'DG')
     """
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for inputs, labels in train_loader:
-            inputs = inputs.view(inputs.size(0), -1)  # (batch_size, 62, 5) flatten to (batch_size, 310)
+
+        for data in train_loader:
+            inputs, labels, domain_labels = data  # Ensure this line matches expected (inputs, labels, domain_labels)
+            inputs = inputs.view(inputs.size(0), -1)  # Flatten input
             optimizer.zero_grad()
+
             # Forward pass
             if use_domain_classifier:
                 label_pred, domain_pred = model(inputs, alpha)
-                # Compute loss
+
+                # Ensure domain_pred has shape (batch_size, 2) for binary classification
+                domain_loss = criterion(domain_pred, domain_labels)  # Domain loss for training
                 label_loss = criterion(label_pred, labels)
-                domain_labels = torch.ones(inputs.size(0), 1)  # Domain label is 1 (source domain)
-                domain_loss = criterion(domain_pred, domain_labels)
                 total_loss = label_loss + domain_loss
             else:
                 label_pred = model(inputs)
-                # Compute loss
-                label_loss = criterion(label_pred, labels)
-                total_loss = label_loss
+                total_loss = criterion(label_pred, labels)
+
             # Backward pass
             total_loss.backward()
             optimizer.step()
             running_loss += total_loss.item()
+
+        # Evaluate on test set during domain adaptation
+        if mode == "DA":
+            model.eval()
+            test_loss = 0.0
+            with torch.no_grad():
+                for data in test_loader:
+                    inputs, labels, domain_labels = data
+                    inputs = inputs.view(inputs.size(0), -1)  # Flatten input
+
+                    label_pred, domain_pred = model(inputs, alpha=0)  # Test with alpha=0 to avoid gradient reversal
+                    label_loss = criterion(label_pred, labels)
+                    domain_loss = criterion(domain_pred, domain_labels)
+                    test_loss += label_loss.item() + domain_loss.item()
+
+            print(f"Test loss: {test_loss / len(test_loader)}")
+
+        # Print loss for each epoch
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader)}")
 
-def train_domain_generalization(model, train_loaders, criterion, optimizer, num_epochs=30, use_domain_classifier=True):
+
+def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=30, use_domain_classifier=True):
     """
     Train the model for domain generalization
     :param model: PyTorch model to train
@@ -62,28 +87,28 @@ def train_domain_generalization(model, train_loaders, criterion, optimizer, num_
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-        for loader in train_loaders:
-            for inputs, labels in loader:
-                optimizer.zero_grad()
+        for inputs, labels, domain_labels in train_loader:
+            optimizer.zero_grad()
 
-                # Forward pass
-                features = model.feature_extractor(inputs)
-                label_pred = model.label_classifier(features)
-                
-                if use_domain_classifier and hasattr(model, 'domain_classifier') and model.domain_classifier is not None:
-                    domain_pred = model.domain_classifier(features, alpha=1.0)
-                    domain_labels = torch.ones(inputs.size(0), 1)  # Domain label is 1 (source domain)
-                    domain_loss = criterion(domain_pred, domain_labels)
-                    loss = criterion(label_pred, labels) + domain_loss
-                else:
-                    loss = criterion(label_pred, labels)
+            # Forward pass
+            features = model.feature_extractor(inputs)
+            label_pred = model.label_classifier(features)
 
-                # Backward pass
-                loss.backward()
-                optimizer.step()
-                running_loss += loss.item()
+            if use_domain_classifier:
+                domain_pred = model.domain_classifier(features, alpha=1.0)
+                # Domain loss (cross-entropy)
+                domain_loss = criterion(domain_pred, domain_labels)
+                loss = criterion(label_pred, labels) + alpha * domain_loss
+            else:
+                loss = criterion(label_pred, labels)
 
-        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss / sum(len(loader) for loader in train_loaders)}")
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {running_loss / sum(len(loader) for loader in train_loader)}")
+
 
 def evaluate_model(model, test_loader, use_domain_classifier=True):
     """
@@ -110,13 +135,14 @@ def evaluate_model(model, test_loader, use_domain_classifier=True):
     accuracy = correct / total
     return accuracy
 
+
 def run_cross_subject_validation(model_type, mode, data_path='dataset', learning_rate=0.0001, alpha=1.0,
-                                 feature_hidden_dims=[128, 64], label_output_dim=3, domain_hidden_dims=[32], domain_output_dim=1,
+                                 feature_hidden_dims=[128, 64], label_output_dim=3, domain_hidden_dims=[32],
                                  use_domain_classifier=True):
     """
     Run cross-subject leave-one-out validation using the given model type
     :param model_type: Type of model being used (e.g., 'DANN')
-    :param mode: Mode of training ('domain_adaptation' or 'domain_generalization')
+    :param mode: Mode of training ('DA' or 'DG')
     :param data_path: Path to the dataset
     :param learning_rate: Learning rate for the optimizer
     :param alpha: Gradient reversal scaling factor for DANN
@@ -135,29 +161,57 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
         test_data, test_labels = subject_data[test_idx]
         train_data = []
         train_labels = []
+        train_domain_labels = []
 
         # Gather all other subjects as training data
         for i in range(num_subjects):
             if i != test_idx:
+                logging.debug(f"subject_data[{i}][0].shape is {subject_data[i][0].shape}")
+                logging.debug(f"subject_data[{i}][1].shape is {subject_data[i][1].shape}")
                 train_data.append(subject_data[i][0])  # Append data
                 train_labels.append(subject_data[i][1])  # Append labels
+                if mode == 'DG':
+                    source_domain_label = i if i < test_idx else i - 1
+                elif mode == "DA":
+                    source_domain_label = 0
+                else:
+                    raise ValueError(mode)
+                logging.debug(f"source_domain_label is {source_domain_label}")
+                domain_label_np = np.full(subject_data[i][0].shape[0], source_domain_label, dtype=np.int32)
+                train_domain_labels.append(domain_label_np)
+                logging.debug(f"(domain_label.shape is {domain_label_np.shape}")
 
         # Concatenate training data
         train_data = np.concatenate(train_data, axis=0)
         train_labels = np.concatenate(train_labels, axis=0)
+        train_domain_labels = np.concatenate(train_domain_labels, axis=0)
 
         # Convert data to PyTorch tensors
         train_tensor = torch.tensor(train_data, dtype=torch.float32)
         train_labels_tensor = torch.tensor(train_labels, dtype=torch.long)
+        train_domain_labels_tensor = torch.tensor(train_domain_labels, dtype=torch.long)
         test_tensor = torch.tensor(test_data, dtype=torch.float32)
         test_labels_tensor = torch.tensor(test_labels, dtype=torch.long)
+
+        if mode == 'DA':
+            target_domain_label = num_subjects - 1
+            test_domain_label_tensor = torch.tensor([target_domain_label] * subject_data[test_idx][0].shape[0], dtype=torch.long)
 
         train_tensor = train_tensor.view(train_tensor.size(0), -1)  # (62, 5) flatten to 310
         test_tensor = test_tensor.view(test_tensor.size(0), -1)
 
-        # Create DataLoader for training and testing
-        train_loader = DataLoader(TensorDataset(train_tensor, train_labels_tensor), batch_size=32, shuffle=True)
-        test_loader = DataLoader(TensorDataset(test_tensor, test_labels_tensor), batch_size=32, shuffle=False)
+        logging.debug(f"train_tensor.shape is {train_tensor.shape}")
+        logging.debug(f"train_labels_tensor.shape is {train_labels_tensor.shape}")
+        logging.debug(f"train_domain_labels_tensor.shape is {train_domain_labels_tensor.shape}")
+
+        # Create DataLoader for training and testing, add domain_labels to DataLoader for DG
+        if mode == 'DG':
+            logging.debug(f"mode is DG, packing the dataset")
+            train_loader = DataLoader(TensorDataset(train_tensor, train_labels_tensor, train_domain_labels_tensor), batch_size=32, shuffle=True)
+            test_loader = DataLoader(TensorDataset(test_tensor, test_labels_tensor), batch_size=32, shuffle=False)
+        else:
+            train_loader = DataLoader(TensorDataset(train_tensor, train_labels_tensor, train_domain_labels_tensor), batch_size=32, shuffle=True)
+            test_loader = DataLoader(TensorDataset(test_tensor, test_labels_tensor, test_domain_label_tensor), batch_size=32, shuffle=False)
 
         # Initialize the model
         if model_type == 'DANN':
@@ -166,8 +220,8 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
                 feature_hidden_dims=feature_hidden_dims,
                 label_output_dim=label_output_dim,
                 domain_hidden_dims=domain_hidden_dims,
-                domain_output_dim=domain_output_dim,
-                use_domain_classifier=use_domain_classifier
+                mode=mode,
+                use_domain_classifier=use_domain_classifier  # Pass the use_domain_classifier flag here
             )
         else:
             raise ValueError("Unsupported model type")
@@ -177,12 +231,12 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
         # Train the model
-        if mode == 'domain_adaptation':
-            train_model(model, train_loader, criterion, optimizer, alpha=alpha, use_domain_classifier=use_domain_classifier)
-        elif mode == 'domain_generalization':
-            train_domain_generalization(model, [train_loader], criterion, optimizer)
+        if mode == "DG":
+            train_DG(model, train_loader, criterion, optimizer, alpha=alpha, use_domain_classifier=use_domain_classifier)
+        elif mode == "DA":
+            train_DA(model, train_loader, test_loader, criterion, optimizer, alpha=alpha, use_domain_classifier=use_domain_classifier)
         else:
-            raise ValueError("Unsupported mode. Choose 'domain_adaptation' or 'domain_generalization'.")
+            raise ValueError(mode)      
 
         # Evaluate the model
         accuracy = evaluate_model(model, test_loader, use_domain_classifier=use_domain_classifier)
@@ -193,10 +247,11 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
     print(f"Cross-subject accuracy mean for {model_type}: {np.mean(accuracies):.2f}, std: {np.std(accuracies):.2f}")
     return np.mean(accuracies)
 
+
 def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_options, use_domain_classifier=True):
     """
     Grid search for DANN model with feature_hidden_dims, domain_hidden_dims, and dropout_ratio.
-    :param mode: Mode of training ('domain_adaptation' or 'domain_generalization')
+    :param mode: Mode of training ('DA' or 'DG')
     :param feature_hidden_dims_options: List of options for feature_hidden_dims
     :param domain_hidden_dims_options: List of options for domain_hidden_dims
     :param use_domain_classifier: Whether to use the domain classifier (default True)
@@ -230,16 +285,9 @@ def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_optio
 
     print(f"Best accuracy: {best_accuracy:.2f} with parameters: {best_params}")
 
+
 if __name__ == "__main__":
-    # feature_hidden_dims_options = [[32, 16], [64, 32], [128, 64], [256, 128], [512, 256], [16, 16], [32, 32], [64, 64], [128, 128], [256, 256]]
-    # domain_hidden_dims_options = [[16], [32], [64], [128]]
-
-    # grid_search_DANN("domain_adaptation", feature_hidden_dims_options, domain_hidden_dims_options)
-    # grid_search_DANN("domain_generalization", feature_hidden_dims_options, domain_hidden_dims_options)
-    # grid_search_DANN("domain_adaptation", feature_hidden_dims_options, domain_hidden_dims_options, False)
-    # grid_search_DANN("domain_generalization", feature_hidden_dims_options, domain_hidden_dims_options, False)
-
-    grid_search_DANN("domain_adaptation", [[256, 128]], [[64]])
-    grid_search_DANN("domain_generalization", [[128, 64]], [[64]])
-    grid_search_DANN("domain_adaptation", [[256, 128]], [[64]], False)
-    grid_search_DANN("domain_generalization", [[128, 64]], [[64]], False)
+    # grid_search_DANN("DA", [[256, 128]], [[64]])
+    grid_search_DANN("DG", [[128, 64]], [[64]])
+    # grid_search_DANN("DA", [[256, 128]], [[64]], False)
+    # grid_search_DANN("DG", [[128, 64]], [[64]], False)

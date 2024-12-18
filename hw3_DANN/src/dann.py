@@ -1,94 +1,83 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
+
+class GradientReversalLayer(torch.autograd.Function):
+    """
+    Gradient Reversal Layer for adversarial training.
+    """
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.neg() * ctx.alpha, None
 
 class FeatureExtractor(nn.Module):
     def __init__(self, input_dim=310, hidden_dims=[128, 64]):
-        """
-        Feature Extractor
-        :param input_dim: Dimension of the input features (default 310)
-        :param hidden_dims: List of hidden layer dimensions (default [128, 64])
-        """
         super(FeatureExtractor, self).__init__()
         layers = []
-        # Build a multi-layer fully connected network
         for i in range(len(hidden_dims)):
-            if i == 0:
-                layers.append(nn.Linear(input_dim, hidden_dims[i]))
-            else:
-                layers.append(nn.Linear(hidden_dims[i-1], hidden_dims[i]))
+            layers.append(nn.Linear(input_dim if i == 0 else hidden_dims[i-1], hidden_dims[i]))
             layers.append(nn.ReLU())
-        self.fc_layers = nn.Sequential(*layers)
+        self.network = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.fc_layers(x)
+        return self.network(x)
 
 class LabelClassifier(nn.Module):
-    def __init__(self, input_dim=64, output_dim=3):
-        """
-        Label Classifier
-        :param input_dim: Dimension of the input features (default 64)
-        :param output_dim: Number of output classes (default 3)
-        """
+    def __init__(self, input_dim=64, num_classes=3):
         super(LabelClassifier, self).__init__()
-        self.fc = nn.Linear(input_dim, output_dim)
+        self.fc = nn.Linear(input_dim, num_classes)
 
-    def forward(self, x):
-        return self.fc(x)
+    def forward(self, features):
+        return self.fc(features)
 
 class DomainClassifier(nn.Module):
-    def __init__(self, input_dim=64, hidden_dims=[32], output_dim=1):
-        """
-        Domain Classifier
-        :param input_dim: Dimension of the input features (default 64)
-        :param hidden_dims: List of hidden layer dimensions (default [32])
-        :param output_dim: Output dimension (default 1)
-        """
+    def __init__(self, input_dim=64, hidden_dims=[32], output_dim=2):
         super(DomainClassifier, self).__init__()
         layers = []
-        # Build a multi-layer fully connected network
         for i in range(len(hidden_dims)):
-            if i == 0:
-                layers.append(nn.Linear(input_dim, hidden_dims[i]))
-            else:
-                layers.append(nn.Linear(hidden_dims[i-1], hidden_dims[i]))
+            layers.append(nn.Linear(input_dim if i == 0 else hidden_dims[i-1], hidden_dims[i]))
             layers.append(nn.ReLU())
         layers.append(nn.Linear(hidden_dims[-1], output_dim))
-        self.fc_layers = nn.Sequential(*layers)
+        self.network = nn.Sequential(*layers)
 
-    def forward(self, x, alpha):
-        x = self.fc_layers(x)
-        x = x * alpha  # Gradient reversal layer
-        return x
+    def forward(self, features, alpha=1.0):
+        reversed_features = GradientReversalLayer.apply(features, alpha)
+        return self.network(reversed_features)
 
 class DANNModel(nn.Module):
-    def __init__(self, input_dim=310, feature_hidden_dims=[128, 64], 
-                 label_output_dim=3, domain_hidden_dims=[32], domain_output_dim=1,
-                 use_domain_classifier=True):
+    def __init__(self, input_dim=310, feature_hidden_dims=[128, 64], label_output_dim=3,
+                 domain_hidden_dims=[32], mode="DA", use_domain_classifier=True):
         """
-        DANN Model
-        :param input_dim: Dimension of the input features (default 310)
-        :param feature_hidden_dims: List of hidden layer dimensions for the feature extractor (default [128, 64])
-        :param label_output_dim: Number of output classes for the label classifier (default 3)
-        :param domain_hidden_dims: List of hidden layer dimensions for the domain classifier (default [32])
-        :param domain_output_dim: Output dimension for the domain classifier (default 1)
-        :param use_domain_classifier: Whether to use the domain classifier (default True)
+        DANN Model.
+        :param mode: "DA" or "DG"
         """
         super(DANNModel, self).__init__()
+        self.mode = mode
+        self.use_domain_classifier = use_domain_classifier
+
+        # Feature Extractor
         self.feature_extractor = FeatureExtractor(input_dim, feature_hidden_dims)
+
+        # Label Classifier
         self.label_classifier = LabelClassifier(feature_hidden_dims[-1], label_output_dim)
-        
+
+        # Domain Classifier
         if use_domain_classifier:
+            domain_output_dim = 2 if mode == "DA" else 11  # Binary for DA, 11 for DG
             self.domain_classifier = DomainClassifier(feature_hidden_dims[-1], domain_hidden_dims, domain_output_dim)
         else:
             self.domain_classifier = None
 
     def forward(self, x, alpha=1.0):
         features = self.feature_extractor(x)
-        label_pred = self.label_classifier(features)
-        
-        if self.domain_classifier is not None:
-            domain_pred = self.domain_classifier(features, alpha)
-            return label_pred, domain_pred
-        else:
-            return label_pred
+        label_preds = self.label_classifier(features)
+
+        if self.use_domain_classifier:
+            domain_preds = self.domain_classifier(features, alpha)
+            return label_preds, domain_preds
+        return label_preds
