@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import logging
 
 class GradientReversalLayer(torch.autograd.Function):
     """
@@ -69,6 +70,7 @@ class DANNModel(nn.Module):
         # Domain Classifier
         if use_domain_classifier:
             domain_output_dim = 2 if mode == "DA" else 11  # Binary for DA, 11 for DG
+            logging.debug(f"[DANNModel::__init__] domain_output_dim is {domain_output_dim}")
             self.domain_classifier = DomainClassifier(feature_hidden_dims[-1], domain_hidden_dims, domain_output_dim)
         else:
             self.domain_classifier = None
@@ -78,6 +80,7 @@ class DANNModel(nn.Module):
         label_preds = self.label_classifier(features)
 
         if self.use_domain_classifier:
-            domain_preds = self.domain_classifier(features, alpha)
+            reversed_features = GradientReversalLayer.apply(features, alpha)
+            domain_preds = self.domain_classifier(reversed_features)
             return label_preds, domain_preds
         return label_preds
