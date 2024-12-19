@@ -1,2 +1,5 @@
 # ignore temp files
 temp/
+
+# ignore files storing the features
+feature/

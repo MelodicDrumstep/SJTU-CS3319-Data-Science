@@ -2,11 +2,19 @@
 
 ## 实验概述
 
-本次实验是用 DANN(Domain Adversarial Neural Network) 来做情绪识别， 并运用 Domain Adaptation 和 Domain Generalization 这两种不同的方法来训练， 以及比较有无 Domain Classifier 的训练结果和数据特征可视化。
+本次实验是用 DANN(Domain Adversarial Neural Network) 来做情绪识别， 并运用 Domain Adaptation 和 Domain Generalization 这两种不同的方法来训练， 以及比较有无 Domain Classifier 的训练结果和数据特征可视化。 在下方，我将使用 DA 作为 Domain Adaptation 的简称， DG 作为 Domain Generalization 的简称。
 
 ## 实验细节
 
-我是在上一次实验的代码上进一步开发的， DANN 模型实现在 `dann.py`。  具体而言， DANN-DA 和 DANN-DG 模型分别实现为下方所示:
+### 数据预处理
+
+这部分代码请见 [src/data_loader.py](src/data_loader.py) 和 [src/emotion_recognition.py](src/emotion_recognition.py)。代码框架沿用了第二次实验的代码。
+
+与第二次实验的不同之处是，我需要在训练前给数据贴上域的标签。 如果是 DA, 那就给训练集贴上 domain label 为 0， 测试集贴上 domain label 为 1。 如果是 DG， 那就给不同的训练集的被试贴 0~10 的不同标签。
+
+### 模型结构设计
+
+这部分代码请见 [src/dann.py](src/dann.py)
 
 + DANN-DA
 
@@ -15,77 +23,46 @@ Feature Extractor 负责提取特征我实现为一个 MLP。 Label Predictor �
 
 + DANN-DG
 
-### 遇到的困难
+DANN-DG 和 DA 的结构类似， 包含 Feature Extractor, Label Predictor 和 Domain Classifier. 
+这里 DG 的 Domain Classifier 是判别特征为 source domains 中的哪个 domain, 即是一个 11 分类器。这里我们就不需要提供测试集数据给模型来训练了。
 
-最开始发现 DANN DA 一直收敛不了， 后来发现是 alpha 调得太大了(1.0)
+### 训练及测试设置
 
-### DANN 模型结构
-DANN 模型包含以下模块：
-1. **特征提取器 (Feature Extractor)**：提取输入数据的高维特征，采用全连接网络实现。
-2. **标签分类器 (Label Classifier)**：基于特征提取器输出的特征，预测情感标签。
-3. **域分类器 (Domain Classifier)**：通过对抗训练学习数据的域分布信息。域分类器使用 **Gradient Reversal Layer (GRL)**，以对抗方式优化域分类误差。
+- Label Predictor 和 Domain Classifier 均使用 CrossEntropyLoss 作为损失函数
+- 使用 Adam 作为选择的优化器，应用 0.0001 的学习率
+- 每个训练进行 30 个 epoch
 
-### 训练流程
-- **Domain Adaptation (DA)**:
-  1. 将训练集标注为域标签 0，测试集标注为域标签 1。
-  2. 在每个训练批次中，将测试数据通过域分类器计算域损失，同时训练集数据用于计算情感标签损失和域损失。
-  3. 优化目标为最小化标签分类损失和最大化域分类损失的组合。
-  
-- **Domain Generalization (DG)**:
-  1. 将多个源域的数据用于训练，不区分目标域。
-  2. 每个源域分配唯一域标签，利用域分类器对源域进行分类，减少域间分布差异。
-  3. 训练目标为最小化情感分类损失和域分类损失。
+### 超参设置
 
-### 模型训练
-训练分为以下阶段：
-1. **特征提取器初始化**：训练特征提取器和标签分类器，使模型能够有效分类情感标签。
-2. **域分类器对抗训练**：添加域分类器，通过 GRL 反向传播负梯度以对抗学习域信息。
+经过小范围的网格搜索(算力不是很充足)， 我选取了以下超参数:
+
++ num_epochs = 30
+
++ alpha = 0.1
+
++ DANN-DA 的 feature extractor 神经元维度为 `[32, 16]`, domain classifier 神经元维度为 `[32]`
+
++ DANN-DG 的 feature extractor 神经元维度为 `[32, 16]`, domain classifier 神经元维度为 `[32]`
 
 ## 实验结果
-### 参数设置
-- 学习率：0.0001
-- 批次大小：32
-- 特征提取器隐藏层：[128, 64]
-- 域分类器隐藏层：[32]
-- 训练轮数：30
 
-### 实验结果分析
-以下是模型在 **DA** 和 **DG** 场景下的分类准确率及训练损失变化情况。
+| 模型 | 平均准确率 | 标准差 |
+|-----------|---------------|---------|
+| DANN-DA(without domain classifier)       | 0.51 | 0.12 |
+| DANN-DA(with domain classifier)       | 0.45 | 0.12 |
+| DANN-DG(without domain classifier)       | 0.52 | 0.09 |
+| DANN-DG(with domain classifier)       | 0.60 | 0.10 |
 
-#### Domain Adaptation (DA)
-| 被试编号 | 准确率 (%) |
-|---------|-----------|
-| 1       | 85.32     |
-| 2       | 87.45     |
-| ...     | ...       |
-| 平均    | 86.14     |
+## 数据可视化
 
-#### Domain Generalization (DG)
-| 被试编号 | 准确率 (%) |
-|---------|-----------|
-| 1       | 74.25     |
-| 2       | 76.34     |
-| ...     | ...       |
-| 平均    | 75.54     |
+## 实验结果分析
 
-### 损失分析
-- 标签损失在训练初期下降迅速，后期逐渐收敛。
-- 域分类损失在对抗训练中先上升后下降，体现了特征提取器逐渐学到跨域不变特征。
+我训练出来的 DANN-DG 在启用 domain classifier 的情况下识别准确率有一定的提升， 而 DANN-DA 在启用 domain classifier 的情况下识别准确率有一定的下降， 但整体识别准确率都不高。 
 
-## 代码结构和实现
-### 文件说明
-1. `dann.py`：模型定义，包括特征提取器、标签分类器、域分类器及 GRL 层的实现。
-2. `emotion_recognition.py`：训练与测试流程，包括 DA 和 DG 模式下的交叉验证。
+对于整体识别准确率都不高的原因， 一方面是因为数据集可能并不易于训练， 且跨被试留一交叉验证的条件太苛刻。 此外， 可能我的代码实现中有不恰当但没有被我发现的地方， 超参设置可能也不合理。
 
-### 核心代码片段
-#### 训练 DA 模型
-```python
-def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, num_epochs=30, alpha=1.0):
-    for epoch in range(num_epochs):
-        for inputs, labels, domain_labels in train_loader:
-            label_pred, domain_pred = model(inputs, alpha)
-            label_loss = criterion(label_pred, labels)
-            domain_loss = criterion(domain_pred, domain_labels)
-            total_loss = label_loss - alpha * domain_loss
-            total_loss.backward()
-            optimizer.step()
+对于 DANN-DG 的识别准确率提升的问题，我认为是这个任务比较适合用分类 source domains 的 domain classifier 来和 feature extractor 对抗训练， 而 DANN-DA 的识别准确率下降的原因可能是这个任务不适合用分类 source domain / target domain 的 domain classifier 来对抗训练。 
+
+## 遇到的困难
+
+1. 我发现 DANN 如果启用 Domain Classifier, loss 是不能简单写成 label loss - alpha * domain loss的， 这样前向计算就有问题。 要通过添加 Gradient Reversal Layer 的方式来实现，然后 loss 写成 label loss + domain loss。我最开始是写成了前者，然后 loss 越变越大， 最后的识别效果和随机猜差不多， 后来修改了才变得正常了。

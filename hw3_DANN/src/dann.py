@@ -84,3 +84,13 @@ class DANNModel(nn.Module):
             domain_preds = self.domain_classifier(reversed_features)
             return label_preds, domain_preds
         return label_preds
+
+    def extract_features(self, x):
+        """
+        Extract features from the feature extractor.
+        :param x: Input data.
+        :return: Extracted features.
+        """
+        with torch.no_grad():
+            features = self.feature_extractor(x)
+        return features

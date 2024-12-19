@@ -10,12 +10,14 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from data_loader import load_seed_data_npy
 import logging
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
 from dann import DANNModel
 
 logging.basicConfig(level=logging.DEBUG)
 
-def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, num_epochs=20, alpha=0.1, use_domain_classifier=True, mode="DA"):
+def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, num_epochs=5, alpha=0.1, use_domain_classifier=True, mode="DA"):
     """
     Train the given model
     :param model: PyTorch model to train
@@ -31,7 +33,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
     model.train()
     for epoch in range(num_epochs):
         running_loss = 0.0
-
+        
         for inputs, labels, domain_labels in train_loader:
             inputs = inputs.view(inputs.size(0), -1)  # Flatten input
             optimizer.zero_grad()
@@ -43,7 +45,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
                 # Ensure domain_pred has shape (batch_size, 2) for binary classification
                 domain_loss = criterion(domain_pred, domain_labels)  # Domain loss for training
                 label_loss = criterion(label_pred, labels)
-                total_loss = label_loss + alpha * domain_loss
+                total_loss = label_loss + domain_loss
             else:
                 label_pred = model(inputs, alpha)
                 total_loss = criterion(label_pred, labels)
@@ -53,7 +55,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
             optimizer.step()
             running_loss += total_loss.item()
 
-        if epoch % 5 == 0 and use_domain_classifier:
+        if use_domain_classifier and epoch % 5 == 0:
             for inputs, domain_labels in test_loader_for_train:
                 inputs = inputs.view(inputs.size(0), -1)  # Flatten input
                 optimizer.zero_grad()
@@ -61,7 +63,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
                 _, domain_pred = model(inputs, alpha)
                 # Ensure domain_pred has shape (batch_size, 2) for binary classification
                 domain_loss = criterion(domain_pred, domain_labels)  # Domain loss for training
-                total_loss = alpha * domain_loss
+                total_loss = domain_loss
 
                 # Backward pass
                 total_loss.backward()
@@ -72,7 +74,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader)}")
 
 
-def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=20, use_domain_classifier=True):
+def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=5, use_domain_classifier=True):
     """
     Train the model for domain generalization
     :param model: PyTorch model to train
@@ -93,7 +95,7 @@ def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=20, us
                 # Domain loss (cross-entropy)
                 # logging.debug(f"[train_DG] domain_pred is {domain_pred}, domain_labels is {domain_labels}")
                 domain_loss = criterion(domain_pred, domain_labels)
-                loss = criterion(label_pred, labels) + alpha * domain_loss
+                loss = criterion(label_pred, labels) + domain_loss
             else:
                 label_pred = model(inputs, alpha)
                 loss = criterion(label_pred, labels)
@@ -130,7 +132,6 @@ def evaluate_model(model, test_loader, use_domain_classifier=True):
             correct += (predicted == labels).sum().item()
     accuracy = correct / total
     return accuracy
-
 
 def run_cross_subject_validation(model_type, mode, data_path='dataset', learning_rate=0.0001, alpha=0.1,
                                  feature_hidden_dims=[128, 64], label_output_dim=3, domain_hidden_dims=[32],
@@ -240,6 +241,9 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
         accuracies.append(accuracy)
         print(f"Accuracy for subject {test_idx + 1}: {accuracy:.2f}")
 
+        if test_idx == num_subjects - 1:
+            save_features_to_file(model, train_loader, f"feature/feature_{mode}_{use_domain_classifier}")
+
     # Print average accuracy
     print(f"Cross-subject accuracy mean for {model_type}: {np.mean(accuracies):.2f}, std: {np.std(accuracies):.2f}")
     return np.mean(accuracies)
@@ -282,10 +286,31 @@ def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_optio
 
     print(f"Best accuracy: {best_accuracy:.2f} with parameters: {best_params}")
 
+def save_features_to_file(model, data_loader, file_path):
+    """
+    Save extracted features to a file.
+    :param model: DANNModel instance.
+    :param data_loader: DataLoader for the data.
+    :param file_path: Path to save the features.
+    """
+    model.eval()
+    all_features = []
+    all_labels = []
+    for inputs, labels, _ in data_loader:
+        inputs = inputs.view(inputs.size(0), -1)  # Flatten input
+        features = model.extract_features(inputs)
+        all_features.append(features.cpu().numpy())
+        all_labels.append(labels.cpu().numpy())
+    
+    all_features = np.concatenate(all_features, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+    
+    # Save features and labels
+    np.savez(file_path, features=all_features, labels=all_labels)
+    print(f"Features saved to {file_path}")
 
 if __name__ == "__main__":
-    grid_search_DANN("DA", [[256, 128]], [[64]])
-
-    grid_search_DANN("DG", [[128, 64]], [[64]])
-    grid_search_DANN("DA", [[256, 128]], [[64]], False)
-    grid_search_DANN("DG", [[128, 64]], [[64]], False)
+    # grid_search_DANN("DA", [[32, 16]], [[32]])
+    # grid_search_DANN("DG", [[32, 16]], [[32]])
+    grid_search_DANN("DA", [[32, 16]], [[32]], False)
+    grid_search_DANN("DG", [[32, 16]], [[32]], False)
