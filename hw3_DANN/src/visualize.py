@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 import numpy as np
+import argparse
 
 def visualize_features(feature_file, title_str):
     """
@@ -20,8 +21,15 @@ def visualize_features(feature_file, title_str):
         plt.scatter(reduced_features[idx, 0], reduced_features[idx, 1], label=f"Class {label}", alpha=0.6)
     plt.legend()
     plt.title(f"t-SNE Visualization of Extracted Features from {title_str}")
-    plt.show()
+    plt.savefig(f"images/{title_str}")
 
 if __name__ == "__main__":
-    file_path = input()
-    visualize_features(file_path, "DANN-DG with domain classifier")
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--filepath', type=str, required=True, help='feature file path')
+    parser.add_argument('--age', type=int, default=18, help='年龄')
+    parser.add_argument('--verbose', action='store_true', help='是否启用详细模式')
+
+    args = parser.parse_args()
+
+    visualize_features(args.filepath, "DANN-DG with domain classifier")

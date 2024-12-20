@@ -17,7 +17,7 @@ from dann import DANNModel
 
 logging.basicConfig(level=logging.DEBUG)
 
-def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, num_epochs=5, alpha=0.1, use_domain_classifier=True, mode="DA"):
+def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, num_epochs=30, alpha=0.1, use_domain_classifier=True, mode="DA"):
     """
     Train the given model
     :param model: PyTorch model to train
@@ -74,7 +74,7 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader)}")
 
 
-def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=5, use_domain_classifier=True):
+def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=30, use_domain_classifier=True):
     """
     Train the model for domain generalization
     :param model: PyTorch model to train
@@ -135,7 +135,7 @@ def evaluate_model(model, test_loader, use_domain_classifier=True):
 
 def run_cross_subject_validation(model_type, mode, data_path='dataset', learning_rate=0.0001, alpha=0.1,
                                  feature_hidden_dims=[128, 64], label_output_dim=3, domain_hidden_dims=[32],
-                                 use_domain_classifier=True):
+                                 use_domain_classifier=True, save_feature=False):
     """
     Run cross-subject leave-one-out validation using the given model type
     :param model_type: Type of model being used (e.g., 'DANN')
@@ -241,7 +241,7 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
         accuracies.append(accuracy)
         print(f"Accuracy for subject {test_idx + 1}: {accuracy:.2f}")
 
-        if test_idx == num_subjects - 1:
+        if save_feature and test_idx == num_subjects - 1:
             save_features_to_file(model, train_loader, f"feature/feature_{mode}_{use_domain_classifier}")
 
     # Print average accuracy
@@ -249,7 +249,8 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
     return np.mean(accuracies)
 
 
-def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_options, use_domain_classifier=True):
+def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_options, 
+                     use_domain_classifier=True, save_feature=False):
     """
     Grid search for DANN model with feature_hidden_dims, domain_hidden_dims, and dropout_ratio.
     :param mode: Mode of training ('DA' or 'DG')
@@ -273,7 +274,8 @@ def grid_search_DANN(mode, feature_hidden_dims_options, domain_hidden_dims_optio
                 domain_hidden_dims=domain_hidden_dims,
                 learning_rate=0.0001,
                 alpha=0.01,
-                use_domain_classifier=use_domain_classifier
+                use_domain_classifier=use_domain_classifier,
+                save_feature=save_feature
             )
 
             # Track the best parameters
@@ -310,7 +312,39 @@ def save_features_to_file(model, data_loader, file_path):
     print(f"Features saved to {file_path}")
 
 if __name__ == "__main__":
-    # grid_search_DANN("DA", [[32, 16]], [[32]])
-    # grid_search_DANN("DG", [[32, 16]], [[32]])
-    grid_search_DANN("DA", [[32, 16]], [[32]], False)
-    grid_search_DANN("DG", [[32, 16]], [[32]], False)
+    # grid_search_DANN("DA", [[16, 8], [32, 16], [64, 32], [128, 64]], [[8], [16], [32], [64]])
+    # grid_search_DANN("DG", [[16, 8], [32, 16], [64, 32], [128, 64]], [[8], [16], [32], [64]])
+    # grid_search_DANN("DA", [[32, 16]], [[32]], False)
+
+    # run_cross_subject_validation(
+    #     model_type='DANN',
+    #     mode="DA",
+    #     feature_hidden_dims=[64, 32],
+    #     domain_hidden_dims=[8],
+    #     learning_rate=0.0001,
+    #     alpha=0.01,
+    #     use_domain_classifier=True,
+    #     save_feature=True
+    # )
+
+    run_cross_subject_validation(
+        model_type='DANN',
+        mode="DG",
+        feature_hidden_dims=[128, 64],
+        domain_hidden_dims=[32],
+        learning_rate=0.0001,
+        alpha=0.01,
+        use_domain_classifier=True,
+        save_feature=True
+    )
+
+    run_cross_subject_validation(
+        model_type='DANN',
+        mode="DA",
+        feature_hidden_dims=[64, 32],
+        domain_hidden_dims=[8],
+        learning_rate=0.0001,
+        alpha=0.01,
+        use_domain_classifier=False,
+        save_feature=True
+    )
