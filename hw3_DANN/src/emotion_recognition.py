@@ -38,11 +38,8 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
             inputs = inputs.view(inputs.size(0), -1)  # Flatten input
             optimizer.zero_grad()
 
-            # Forward pass
             if use_domain_classifier:
                 label_pred, domain_pred = model(inputs, alpha)
-
-                # Ensure domain_pred has shape (batch_size, 2) for binary classification
                 domain_loss = criterion(domain_pred, domain_labels)  # Domain loss for training
                 label_loss = criterion(label_pred, labels)
                 total_loss = label_loss + domain_loss
@@ -50,7 +47,6 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
                 label_pred = model(inputs, alpha)
                 total_loss = criterion(label_pred, labels)
 
-            # Backward pass
             total_loss.backward()
             optimizer.step()
             running_loss += total_loss.item()
@@ -61,16 +57,12 @@ def train_DA(model, train_loader, test_loader_for_train, criterion, optimizer, n
                 optimizer.zero_grad()
 
                 _, domain_pred = model(inputs, alpha)
-                # Ensure domain_pred has shape (batch_size, 2) for binary classification
                 domain_loss = criterion(domain_pred, domain_labels)  # Domain loss for training
                 total_loss = domain_loss
-
-                # Backward pass
                 total_loss.backward()
                 optimizer.step()
                 running_loss += total_loss.item()
 
-        # Print loss for each epoch
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader)}")
 
 
@@ -92,15 +84,12 @@ def train_DG(model, train_loader, criterion, optimizer, alpha, num_epochs=30, us
 
             if use_domain_classifier:
                 label_pred, domain_pred = model(inputs, alpha)
-                # Domain loss (cross-entropy)
                 # logging.debug(f"[train_DG] domain_pred is {domain_pred}, domain_labels is {domain_labels}")
                 domain_loss = criterion(domain_pred, domain_labels)
                 loss = criterion(label_pred, labels) + domain_loss
             else:
                 label_pred = model(inputs, alpha)
                 loss = criterion(label_pred, labels)
-
-            # Backward pass
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
@@ -124,7 +113,7 @@ def evaluate_model(model, test_loader, use_domain_classifier=True):
             inputs = inputs.view(inputs.size(0), -1)  # (batch_size, 62, 5) flatten to (batch_size, 310)
             if use_domain_classifier:
                 outputs = model(inputs)
-                label_pred = outputs[0]  # extract label_pred
+                label_pred = outputs[0]  
             else:
                 label_pred = model(inputs)
             _, predicted = torch.max(label_pred, 1)  
@@ -154,7 +143,6 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
 
     accuracies = []
     for test_idx in range(num_subjects):
-        # Prepare training and testing data
         test_data, test_labels = subject_data[test_idx]
         train_data = []
         train_labels = []
@@ -165,8 +153,8 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
             if i != test_idx:
                 logging.debug(f"subject_data[{i}][0].shape is {subject_data[i][0].shape}")
                 logging.debug(f"subject_data[{i}][1].shape is {subject_data[i][1].shape}")
-                train_data.append(subject_data[i][0])  # Append data
-                train_labels.append(subject_data[i][1])  # Append labels
+                train_data.append(subject_data[i][0])  
+                train_labels.append(subject_data[i][1]) 
                 if mode == 'DG':
                     source_domain_label = i if i < test_idx else i - 1
                 elif mode == "DA":
@@ -219,12 +207,11 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
                 label_output_dim=label_output_dim,
                 domain_hidden_dims=domain_hidden_dims,
                 mode=mode,
-                use_domain_classifier=use_domain_classifier  # Pass the use_domain_classifier flag here
+                use_domain_classifier=use_domain_classifier  
             )
         else:
             raise ValueError("Unsupported model type")
 
-        # Define loss and optimizer
         criterion = nn.CrossEntropyLoss() 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -244,7 +231,6 @@ def run_cross_subject_validation(model_type, mode, data_path='dataset', learning
         if save_feature and test_idx == num_subjects - 1:
             save_features_to_file(model, train_loader, f"feature/feature_{mode}_{use_domain_classifier}")
 
-    # Print average accuracy
     print(f"Cross-subject accuracy mean for {model_type}: {np.mean(accuracies):.2f}, std: {np.std(accuracies):.2f}")
     return np.mean(accuracies)
 

@@ -27,8 +27,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--filepath', type=str, required=True, help='feature file path')
-    parser.add_argument('--age', type=int, default=18, help='年龄')
-    parser.add_argument('--verbose', action='store_true', help='是否启用详细模式')
 
     args = parser.parse_args()
 
