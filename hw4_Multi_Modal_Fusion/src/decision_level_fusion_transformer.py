@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+import logging
+
 class DecisionLevelFusionTransformer(nn.Module):
     def __init__(self, input_size_eeg, input_size_eye, hidden_size, num_heads, num_layers, output_size):
         """
@@ -14,20 +16,26 @@ class DecisionLevelFusionTransformer(nn.Module):
         """
         super(DecisionLevelFusionTransformer, self).__init__()
 
+        # Linear layers to map EEG and Eye data to the same feature size
+        self.eeg_projection = nn.Linear(input_size_eeg, hidden_size)
+        self.eye_projection = nn.Linear(input_size_eye, hidden_size)
+
         # EEG Transformer
         self.eeg_transformer = nn.Transformer(
-            d_model=hidden_size, 
-            num_encoder_layers=num_layers, 
-            nhead=num_heads, 
-            dim_feedforward=hidden_size * 4
+            d_model=hidden_size,  # Hidden size of the transformer
+            num_encoder_layers=num_layers,
+            nhead=num_heads,
+            dim_feedforward=hidden_size * 4,
+            batch_first=True  # To match the input format (batch_size, seq_len, feature_size)
         )
         
         # Eye Transformer
         self.eye_transformer = nn.Transformer(
-            d_model=hidden_size, 
-            num_encoder_layers=num_layers, 
-            nhead=num_heads, 
-            dim_feedforward=hidden_size * 4
+            d_model=hidden_size,  # Hidden size of the transformer
+            num_encoder_layers=num_layers,
+            nhead=num_heads,
+            dim_feedforward=hidden_size * 4,
+            batch_first=True  # To match the input format (batch_size, seq_len, feature_size)
         )
 
         # Fully connected layer after concatenation of outputs from both Transformers
@@ -40,20 +48,22 @@ class DecisionLevelFusionTransformer(nn.Module):
         :param eye_data: Eye tracking data (batch_size, seq_len, input_size_eye)
         :return: The fused output (final prediction)
         """
-        # Pass EEG data through EEG Transformer
-        eeg_output = self.eeg_transformer(eeg_data)
+        # Project EEG and Eye data to the same feature size
+        eeg_data = self.eeg_projection(eeg_data)  
+        eye_data = self.eye_projection(eye_data)  
+        eeg_output = self.eeg_transformer(eeg_data, eeg_data)  
+        eye_output = self.eye_transformer(eye_data, eye_data)  
 
-        # Pass Eye tracking data through Eye Transformer
-        eye_output = self.eye_transformer(eye_data)
+        # logging.debug(f"eeg_output shape: {eeg_output.shape}")
+        # logging.debug(f"eye_output shape: {eye_output.shape}")
 
-        # Take the output from the last time step (assuming seq_len=1)
-        eeg_output = eeg_output[:, -1, :]  # (batch_size, hidden_size)
-        eye_output = eye_output[:, -1, :]  # (batch_size, hidden_size)
+        if eeg_output.dim() == 3: 
+            eeg_output = eeg_output[:, -1, :]  
+        if eye_output.dim() == 3:  
+            eye_output = eye_output[:, -1, :]  
 
         # Concatenate the outputs of both Transformers
         concatenated_output = torch.cat((eeg_output, eye_output), dim=1)  # (batch_size, hidden_size * 2)
-
-        # Pass the concatenated output through the fully connected layer
         final_output = self.fc(concatenated_output)
 
         return final_output

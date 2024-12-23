@@ -96,8 +96,16 @@ def run_subject_validation(model_type, data_path='dataset', learning_rate=0.0001
                                                   hidden_size=hidden_size, num_heads=num_heads, num_layers=num_layers, 
                                                   output_size=output_size)
         elif model_type == 'DecisionLevelFusion':
-            model = DecisionLevelFusionTransformer(input_size=train_data_eeg.shape[1] + train_data_eye.shape[1], hidden_size=hidden_size, 
-                                         output_size=output_size)
+            # 修改 run_subject_validation 函数中的 model 初始化部分
+            model = DecisionLevelFusionTransformer(
+                input_size_eeg=train_data_eeg.shape[1],  # EEG 数据的特征维度
+                input_size_eye=train_data_eye.shape[1],  # Eye 数据的特征维度
+                hidden_size=hidden_size,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                output_size=output_size
+            )
+
         elif model_type == 'BiModalDeepAutoencoder':
             model = BiModalDeepAutoencoder(input_size1=train_data_eeg.shape[1], input_size2=train_data_eye.shape[1], 
                                            hidden_size=hidden_size, latent_dim=latent_dim)
@@ -122,5 +130,5 @@ def run_subject_validation(model_type, data_path='dataset', learning_rate=0.0001
 if __name__ == "__main__":
     # Run subject-dependent validation using the specified model
     # run_subject_validation(model_type='FeatureLevelFusionTransformer')
-    run_subject_validation(model_type='DecisionLevelFusion')
+    # run_subject_validation(model_type='DecisionLevelFusion')
     run_subject_validation(model_type='BiModalDeepAutoencoder')
