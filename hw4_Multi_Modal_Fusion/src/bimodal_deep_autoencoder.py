@@ -12,28 +12,26 @@ class BiModalDeepAutoencoder(nn.Module):
         """
         super(BiModalDeepAutoencoder, self).__init__()
         
-        # Encoder for modality 1 (EEG)
+        # Encoder for EEG
         self.encoder1 = nn.Sequential(
             nn.Linear(input_size1, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, latent_dim)
         )
-        
-        # Encoder for modality 2 (EOG)
+        # Encoder for EOG
         self.encoder2 = nn.Sequential(
             nn.Linear(input_size2, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, latent_dim)
         )
-        
-        # Decoder for modality 1 (EEG reconstruction)
+        # Decoder for EEG
         self.decoder1 = nn.Sequential(
             nn.Linear(latent_dim, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, input_size1)
         )
         
-        # Decoder for modality 2 (EOG reconstruction)
+        # Decoder for EOG
         self.decoder2 = nn.Sequential(
             nn.Linear(latent_dim, hidden_size),
             nn.ReLU(),
@@ -55,16 +53,13 @@ class BiModalDeepAutoencoder(nn.Module):
         :return: Reconstructed data for both modalities and classification output
         """
         # Encode both modalities
-        latent1 = self.encoder1(x1)  # Latent representation for modality 1
-        latent2 = self.encoder2(x2)  # Latent representation for modality 2
-        
+        latent1 = self.encoder1(x1) 
+        latent2 = self.encoder2(x2) 
         # Shared representation (average of the two latent representations)
         shared_latent = (latent1 + latent2) / 2
-        
         # Decode the shared representation back to the original input space for each modality
-        reconstructed1 = self.decoder1(shared_latent)  # Reconstruct EEG data
-        reconstructed2 = self.decoder2(shared_latent)  # Reconstruct EOG data
-        
+        reconstructed1 = self.decoder1(shared_latent) 
+        reconstructed2 = self.decoder2(shared_latent) 
         # Classification output
         classification_output = self.classifier(shared_latent)
         

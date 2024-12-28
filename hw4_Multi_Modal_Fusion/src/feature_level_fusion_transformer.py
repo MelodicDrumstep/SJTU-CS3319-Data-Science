@@ -15,33 +15,27 @@ class FeatureLevelFusionTransformer(nn.Module):
         """
         super(FeatureLevelFusionTransformer, self).__init__()
         
-        # Transformer Encoder Layer with dropout
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dropout=dropout)
         self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
-        
-        # FC layers to process the input modalities
+
         self.fc1 = nn.Sequential(
             nn.Linear(input_size1, hidden_size),
             nn.ReLU(),
-            nn.Dropout(dropout)  # Add dropout after activation
+            nn.Dropout(dropout) 
         )
         self.fc2 = nn.Sequential(
             nn.Linear(input_size2, hidden_size),
             nn.ReLU(),
-            nn.Dropout(dropout)  # Add dropout after activation
+            nn.Dropout(dropout) 
         )
-        
-        # A new FC layer to match the expected input dimension of Transformer
         self.fc_transformer_input = nn.Sequential(
             nn.Linear(hidden_size * 2, hidden_size),
             nn.ReLU(),
-            nn.Dropout(dropout)  # Add dropout after activation
+            nn.Dropout(dropout) 
         )
-        
-        # Output layer for classification
         self.fc_out = nn.Sequential(
             nn.Linear(hidden_size, output_size),
-            nn.Dropout(dropout)  # Optional: Dropout here if overfitting is an issue
+            nn.Dropout(dropout)  
         )
     
     def forward(self, x1, x2):
@@ -51,24 +45,13 @@ class FeatureLevelFusionTransformer(nn.Module):
         :param x2: EOG data (batch_size, seq_len, input_size2)
         :return: Output of the model (batch_size, output_size)
         """
-        # Process the two modalities through their respective FC layers
         x1 = self.fc1(x1)
         x2 = self.fc2(x2)
-        
-        # Concatenate the two modalities along the feature dimension
         x = torch.cat((x1, x2), dim=-1)  
         x = self.fc_transformer_input(x) 
-        
-        # # Add a sequence length dimension for the Transformer
-        # x = x.unsqueeze(1)  # Add a dimension for seq_len (batch_size, 1, hidden_size)
-        
-        # Pass through the Transformer Encoder
-        x = self.transformer_encoder(x)  # (batch_size, 1, hidden_size)
-        
-        # # Remove the seq_len dimension
-        # x = x.squeeze(1)  # (batch_size, hidden_size)
-        
-        # Pass through the output layer for classification
-        x = self.fc_out(x)  # (batch_size, output_size)
+        # x = x.unsqueeze(1)
+        x = self.transformer_encoder(x) 
+        # x = x.squeeze(1) 
+        x = self.fc_out(x)  
         
         return x

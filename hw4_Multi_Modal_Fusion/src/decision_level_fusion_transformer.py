@@ -22,23 +22,22 @@ class DecisionLevelFusionTransformer(nn.Module):
 
         # EEG Transformer
         self.eeg_transformer = nn.Transformer(
-            d_model=hidden_size,  # Hidden size of the transformer
+            d_model=hidden_size, 
             num_encoder_layers=num_layers,
             nhead=num_heads,
             dim_feedforward=hidden_size * 4,
-            batch_first=True  # To match the input format (batch_size, seq_len, feature_size)
+            batch_first=True  
         )
         
         # Eye Transformer
         self.eye_transformer = nn.Transformer(
-            d_model=hidden_size,  # Hidden size of the transformer
+            d_model=hidden_size,  
             num_encoder_layers=num_layers,
             nhead=num_heads,
             dim_feedforward=hidden_size * 4,
-            batch_first=True  # To match the input format (batch_size, seq_len, feature_size)
+            batch_first=True 
         )
 
-        # Fully connected layer after concatenation of outputs from both Transformers
         self.fc = nn.Linear(hidden_size * 2, output_size)  # Hidden size * 2 after concatenation
 
     def forward(self, eeg_data, eye_data):
@@ -63,7 +62,7 @@ class DecisionLevelFusionTransformer(nn.Module):
             eye_output = eye_output[:, -1, :]  
 
         # Concatenate the outputs of both Transformers
-        concatenated_output = torch.cat((eeg_output, eye_output), dim=1)  # (batch_size, hidden_size * 2)
+        concatenated_output = torch.cat((eeg_output, eye_output), dim=1) 
         final_output = self.fc(concatenated_output)
 
         return final_output
